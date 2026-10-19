@@ -1,16 +1,13 @@
-# render: junta una plantilla con datos · redirect: manda al navegador a otra URL · get_object_or_404: busca un registro o responde 404
 from django.shortcuts import render, redirect, get_object_or_404
-# connection: datos de la conexión a la base (lo usa la vista "inicio" de la Semana 3)
 from django.db import connection
-# login_required: decorador que exige sesión iniciada antes de entrar a la vista
 from django.contrib.auth.decorators import login_required
-# Servicio: el modelo de la Semana 4, importado desde este mismo directorio
+from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
+from django.contrib.auth import login, logout
+from django.contrib import messages
 from .models import Servicio
-# ServicioForm: el ModelForm que creaste en el paso 01
 from .forms import ServicioForm
 
 
-# inicio: la vista de la Semana 3 que muestra a qué base estás conectado (no cambia)
 def inicio(request):
     info_bd = connection.settings_dict
     contexto = {
@@ -20,13 +17,45 @@ def inicio(request):
     return render(request, 'core/inicio.html', contexto)
 
 
-# servicios: la vista del listado de la Semana 4
+def registro(request):
+    if request.method == 'POST':
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            usuario = form.save()
+            login(request, usuario)
+            messages.success(request, '¡Cuenta creada con éxito!')
+            return redirect('servicios')
+    else:
+        form = UserCreationForm()
+    return render(request, 'core/registro.html', {'form': form})
+
+
+def iniciar_sesion(request):
+    if request.method == 'POST':
+        form = AuthenticationForm(request, data=request.POST)
+        if form.is_valid():
+            usuario = form.get_user()
+            login(request, usuario)
+            messages.success(request, f'Bienvenido de nuevo, {usuario.username}')
+            return redirect('servicios')
+    else:
+        form = AuthenticationForm()
+    return render(request, 'core/login.html', {'form': form})
+
+
+@login_required
+def cerrar_sesion(request):
+    logout(request)
+    messages.info(request, 'Has cerrado sesión correctamente.')
+    return redirect('inicio')
+
+
+@login_required
 def servicios(request):
-    lista_servicios = Servicio.objects.all()
+    lista_servicios = Servicio.objects.filter(propietario=request.user)
     return render(request, 'core/servicios.html', {'servicios': lista_servicios})
 
 
-# @login_required: si nadie inició sesión, Django lo manda a LOGIN_URL (el login de /admin)
 @login_required
 def crear_servicio(request):
     if request.method == 'POST':
@@ -35,6 +64,7 @@ def crear_servicio(request):
             nuevo = form.save(commit=False)
             nuevo.propietario = request.user
             nuevo.save()
+            messages.success(request, 'Servicio creado exitosamente.')
             return redirect('servicios')
     else:
         form = ServicioForm()
@@ -43,11 +73,12 @@ def crear_servicio(request):
 
 @login_required
 def editar_servicio(request, pk):
-    servicio = get_object_or_404(Servicio, pk=pk)
+    servicio = get_object_or_404(Servicio, pk=pk, propietario=request.user)
     if request.method == 'POST':
         form = ServicioForm(request.POST, instance=servicio)
         if form.is_valid():
             form.save()
+            messages.success(request, 'Servicio actualizado exitosamente.')
             return redirect('servicios')
     else:
         form = ServicioForm(instance=servicio)
@@ -56,8 +87,9 @@ def editar_servicio(request, pk):
 
 @login_required
 def eliminar_servicio(request, pk):
-    servicio = get_object_or_404(Servicio, pk=pk)
+    servicio = get_object_or_404(Servicio, pk=pk, propietario=request.user)
     if request.method == 'POST':
         servicio.delete()
+        messages.success(request, 'Servicio eliminado exitosamente.')
         return redirect('servicios')
     return render(request, 'core/servicio_confirm_delete.html', {'servicio': servicio})
